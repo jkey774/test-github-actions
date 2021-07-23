@@ -53,6 +53,7 @@ jobs:
   #         name: codecov
 
   analyze:
+    name: Analyze
     needs: build
     runs-on: ubuntu-latest
 
