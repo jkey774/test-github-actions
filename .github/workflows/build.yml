@@ -1,6 +1,10 @@
 name: build
 
-on: [push]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build:
@@ -8,48 +12,88 @@ jobs:
 
     strategy:
       matrix:
-        java-version: [ 8, 11, 15 ]
+        java-version: '8'
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-java@v2
-      with:
-        distribution: 'adopt'
-        java-version: ${{ matrix.java-version }}
-    - run: mvn -B install --no-transfer-progress
+      - uses: actions/checkout@v2
 
-  coverage:
+      - name: Set up JDK 8
+      - uses: actions/setup-java@v2
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'adopt'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+        
+      - name: Build with Maven
+        run: mvn -B verify --no-transfer-progress
+
+  # coverage:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - uses: actions/setup-java@v2
+  #       with:
+  #         java-version: '8'
+  #         distribution: 'adopt'
+
+  #     - run: mvn -B verify -P coverage --no-transfer-progress
+
+  #     - uses: codecov/codecov-action@v1
+  #       with:
+  #         file: ./**/target/site/jacoco/jacoco.xml
+  #         name: codecov
+
+  analyze:
     needs: build
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-java@v2
-        with:
-          distribution: 'adopt'
-          java-version: 15
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
 
-      - run: mvn -B verify -P coverage --no-transfer-progress
-
-      - uses: codecov/codecov-action@v1
-        with:
-          file: ./**/target/site/jacoco/jacoco.xml
-          name: codecov
-
-  publish-snapshot:
-    needs: coverage
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'java' ]
 
     steps:
-      - uses: actions/checkout@v2
+    - name: Checkout repository
+      uses: actions/checkout@v2
 
-      - name: Set up settings.xml for GitHub Packages
-        uses: actions/setup-java@v2
-        with:
-          distribution: 'adopt'
-          java-version: 15
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v1
+      with:
+        languages: ${{ matrix.language }}
 
-      - name: Publish SNAPSHOT version to GitHub Packages (we can skip tests, since we only deploy, if the build workflow succeeded)
-        run: mvn -B --no-transfer-progress deploy -DskipTests --projects cxf-spring-boot-starter
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build with Maven
+      run: mvn -B -DskipTests package --file pom.xml
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v1
+
+  # publish-snapshot:
+  #   needs: coverage
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - uses: actions/checkout@v2
+
+  #     - name: Set up settings.xml for GitHub Packages
+  #       uses: actions/setup-java@v2
+  #       with:
+  #         distribution: "adopt"
+  #         java-version: 15
+
+  #     - name: Publish SNAPSHOT version to GitHub Packages (we can skip tests, since we only deploy, if the build workflow succeeded)
+  #       run: mvn -B --no-transfer-progress deploy -DskipTests --projects cxf-spring-boot-starter
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
